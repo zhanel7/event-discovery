@@ -1,0 +1,105 @@
+networks:
+  event_net:
+    driver: bridge
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: event_discovery
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # С хоста: localhost:5433 (чтобы не конфликтовать с локальным PostgreSQL на 5432)
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - event_net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # С хоста: localhost:6380 (если локальный Redis уже на 6379)
+    ports:
+      - "6380:6379"
+    networks:
+      - event_net
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/event_discovery
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-in-production-min-32-chars}
+      FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      LOG_FILE: logs/app.log
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin12345}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    # Без healthcheck: на Docker Desktop curl/HTTP-проверки часто дают ложный unhealthy
+    # и блокируют frontend/prometheus. Порядок запуска — через depends_on ниже.
+    networks:
+      - event_net
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - event_net
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+    networks:
+      - event_net
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro
+      - ./grafana/dashboards/dashboard.json:/etc/grafana/provisioning/dashboards/json/dashboard.json:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - event_net
+
+volumes:
+  pgdata:
