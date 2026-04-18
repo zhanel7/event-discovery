@@ -1,113 +1,90 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { apiFetch, clearTokens, getApiBaseUrl, setTokens } from "../api.js";
+import { createContext, useContext, useEffect, useState } from 'react'
+import { authAPI } from '../api'
 
-const AuthContext = createContext(null);
+const AuthContext = createContext()
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const loadMe = useCallback(async () => {
-    const access = localStorage.getItem("access_token");
-    const refresh = localStorage.getItem("refresh_token");
-    if (!access) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-    const r = await apiFetch("/auth/me");
-    if (r.status === 401 && refresh) {
-      // Try to refresh token
-      const base = getApiBaseUrl();
-      const refr = await fetch(`${base}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refresh }),
-      });
-      if (refr.ok) {
-        const data = await refr.json();
-        setTokens(data.access_token, data.refresh_token);
-        const r2 = await apiFetch("/auth/me");
-        if (r2.ok) {
-          setUser(await r2.json());
-        } else {
-          setUser(null);
-          clearTokens();
-        }
-      } else {
-        setUser(null);
-        clearTokens();
-      }
-    } else if (r.ok) {
-      setUser(await r.json());
-    } else {
-      setUser(null);
-      clearTokens();
-    }
-    setLoading(false);
-  }, []);
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadMe();
-  }, [loadMe]);
+    checkAuth()
+  }, [])
+
+  const checkAuth = async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      if (token) {
+        const response = await authAPI.getProfile()
+        setUser(response.data)
+      }
+    } catch (error) {
+      // Token is invalid or expired
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const login = async (email, password) => {
-    const base = getApiBaseUrl();
-    const r = await fetch(`${base}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.detail || "Login failed");
-    setTokens(data.access_token, data.refresh_token);
-    await loadMe();
-  };
+    try {
+      const response = await authAPI.login({ email, password })
+      const { access_token, refresh_token } = response.data
 
-  const register = async (email, password) => {
-    const base = getApiBaseUrl();
-    const r = await fetch(`${base}/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, role: "user" }),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Registration failed");
-    const lr = await fetch(`${base}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const tok = await lr.json();
-    if (!lr.ok) throw new Error("Auto-login failed");
-    setTokens(tok.access_token, tok.refresh_token);
-    await loadMe();
-  };
+      localStorage.setItem('access_token', access_token)
+      localStorage.setItem('refresh_token', refresh_token)
+
+      await checkAuth()
+      return { success: true }
+    } catch (error) {
+      throw new Error(error.response?.data?.detail || 'Login failed')
+    }
+  }
+
+  const register = async (email, password, role = 'user') => {
+    try {
+      await authAPI.register({ email, password, role })
+
+      // Auto-login after registration
+      return await login(email, password)
+    } catch (error) {
+      throw new Error(error.response?.data?.detail || 'Registration failed')
+    }
+  }
 
   const logout = async () => {
-    const access = localStorage.getItem("access_token");
-    if (access) {
-      try {
-        await fetch(`${getApiBaseUrl()}/auth/logout`, { method: "POST" });
-      } catch {
-        /* ignore */
-      }
+    try {
+      await authAPI.logout()
+    } catch (error) {
+      // Ignore logout errors
+    } finally {
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      setUser(null)
     }
-    clearTokens();
-    setUser(null);
-  };
+  }
 
-  const refreshUser = loadMe;
+  const value = {
+    user,
+    loading,
+    login,
+    register,
+    logout,
+    checkAuth,
+  }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
-  );
+  )
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth outside provider");
-  return ctx;
+  const context = useContext(AuthContext)
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider')
+  }
+  return context
 }

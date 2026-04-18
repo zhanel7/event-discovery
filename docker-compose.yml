@@ -2,6 +2,10 @@ networks:
   event_net:
     driver: bridge
 
+volumes:
+  pgdata:
+  redisdata:
+
 services:
   db:
     image: postgres:16-alpine
@@ -12,7 +16,6 @@ services:
       POSTGRES_DB: event_discovery
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # С хоста: localhost:5433 (чтобы не конфликтовать с локальным PostgreSQL на 5432)
     ports:
       - "5433:5432"
     healthcheck:
@@ -26,7 +29,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # С хоста: localhost:6380 (если локальный Redis уже на 6379)
+    volumes:
+      - redisdata:/data
     ports:
       - "6380:6379"
     networks:
@@ -49,10 +53,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
       - "8000:8000"
-    # Без healthcheck: на Docker Desktop curl/HTTP-проверки часто дают ложный unhealthy
-    # и блокируют frontend/prometheus. Порядок запуска — через depends_on ниже.
     networks:
       - event_net
 
@@ -65,7 +72,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - event_net
 
@@ -76,6 +84,11 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=200h"
+      - "--web.enable-lifecycle"
     ports:
       - "9090:9090"
     depends_on:
@@ -89,7 +102,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_USERS_DEFAULT_THEME: dark
+      GF_USERS_DEFAULT_THEME: light
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
       - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - ./grafana/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro
@@ -101,5 +115,19 @@ services:
     networks:
       - event_net
 
-volumes:
-  pgdata:
+  k6:
+    image: grafana/k6:latest
+    restart: "no"
+    volumes:
+      - ./k6/load-test.js:/scripts/load-test.js:ro
+    environment:
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: avg,min,max,p(95),p(99)
+    command: ["run", "/scripts/load-test.js"]
+    depends_on:
+      - backend
+      - prometheus
+    networks:
+      - event_net
+    profiles:
+      - load-test

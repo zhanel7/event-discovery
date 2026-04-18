@@ -1,37 +1,91 @@
 """JWT и хэширование паролей (bcrypt)."""
 import os
+import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import User
 from schemas import Role
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production-use-long-random-string")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-production-min-32-chars")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
+
+security = HTTPBearer(auto_error=False)
+
+# Lazy initialization of CryptContext
+_pwd_context = None
+_bcrypt_available = None
+
+def _get_pwd_context():
+    global _pwd_context, _bcrypt_available
+    if _pwd_context is None:
+        try:
+            from passlib.context import CryptContext
+            _pwd_context = CryptContext(
+                schemes=["bcrypt"],
+                default="bcrypt",
+                bcrypt__rounds=12,
+                deprecated="auto"
+            )
+            _bcrypt_available = True
+        except Exception as e:
+            print(f"Warning: Bcrypt initialization failed ({e}), using fallback")
+            _bcrypt_available = False
+            _pwd_context = "fallback"
+    return _pwd_context
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-production-min-32-chars")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 security = HTTPBearer(auto_error=False)
 
 
+def hash_password(plain: str) -> str:
+    pwd_context = _get_pwd_context()
+    if _bcrypt_available:
+        try:
+            return pwd_context.hash(plain)
+        except Exception:
+            pass  # Fall through to fallback
+    # Fallback to SHA256 with salt
+    salt = os.urandom(16).hex()
+    hashed = hashlib.pbkdf2_hmac('sha256', plain.encode(), salt.encode(), 100000)
+    return f"pbkdf2$sha256$100000${salt}${hashed.hex()}"
+
+
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    pwd_context = _get_pwd_context()
+    if _bcrypt_available:
+        try:
+            return pwd_context.verify(plain, hashed)
+        except Exception:
+            pass  # Fall through to fallback
+    # Fallback verification for PBKDF2
+    if not hashed.startswith("pbkdf2$"):
+        return False
+    parts = hashed.split("$")
+    if len(parts) != 5:
+        return False
+    _, algorithm, iterations, salt, digest = parts
+    try:
+        iterations_int = int(iterations)
+    except ValueError:
+        return False
+    test_hash = hashlib.pbkdf2_hmac(algorithm, plain.encode(), salt.encode(), iterations_int)
+    return test_hash.hex() == digest
 
 
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-def create_access_token(subject: str, user_id: int, role: str) -> str:
+def create_access_token(subject: str, user_id: str, role: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {
         "sub": subject,
@@ -43,7 +97,7 @@ def create_access_token(subject: str, user_id: int, role: str) -> str:
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(subject: str, user_id: int, role: str) -> str:
+def create_refresh_token(subject: str, user_id: str, role: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode = {
         "sub": subject,
@@ -56,20 +110,23 @@ def create_refresh_token(subject: str, user_id: int, role: str) -> str:
 
 
 def decode_token(token: str) -> dict:
-    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
     return db.query(User).filter(User.email == email).first()
 
 
-def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
+def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     user = get_user_by_email(db, email)
-    if not user or not verify_password(password, user.hashed_password):
+    if not user or not verify_password(password, user.password_hash):
         return None
     return user
 
@@ -85,46 +142,23 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = credentials.credentials
-    try:
-        payload = decode_token(token)
-        if payload.get("type") != "access":
-            raise HTTPException(status_code=401, detail="Invalid token type")
-        email: str = payload.get("sub")
-        uid: int = payload.get("uid")
-        if email is None or uid is None:
-            raise HTTPException(status_code=401, detail="Invalid token payload")
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    payload = decode_token(token)
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    email: str = payload.get("sub")
+    uid: str = payload.get("uid")
+    if email is None or uid is None:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
     user = get_user_by_id(db, uid)
     if user is None or user.email != email:
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
 
-async def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: Session = Depends(get_db),
-) -> Optional[User]:
-    if credentials is None or not credentials.credentials:
-        return None
-    token = credentials.credentials
-    try:
-        payload = decode_token(token)
-        if payload.get("type") != "access":
-            return None
-        uid = payload.get("uid")
-        if uid is None:
-            return None
-        return get_user_by_id(db, uid)
-    except JWTError:
-        return None
-
-
-async def get_current_admin(user: User = Depends(get_current_user)) -> User:
-    if user.role != Role.admin.value:
+async def require_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role != Role.admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+# Compatibility aliases
+get_password_hash = hash_password

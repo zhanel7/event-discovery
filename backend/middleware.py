@@ -1,59 +1,139 @@
-"""Логирование запросов, rate limiting (Redis), заголовки безопасности."""
+"""Middleware для FastAPI приложения."""
 import logging
+import math
 import os
 import time
 from typing import Callable
 
+import redis
 from fastapi import Request, Response
-from jose import JWTError, jwt
+from prometheus_client import Counter, Histogram
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from auth import SECRET_KEY, ALGORITHM
+from cache import get_redis_client
 
-logger = logging.getLogger("event_discovery.http")
-
-# Prometheus counters (дополнительно к instrumentator)
-try:
-    from prometheus_client import Counter
-
-    HTTP_ERRORS = Counter(
-        "http_errors_total",
-        "HTTP responses with 4xx or 5xx status",
-        ["status_class"],
-    )
-except ImportError:
-    HTTP_ERRORS = None
+logger = logging.getLogger(__name__)
 
 
-def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Rate limiting middleware с Redis."""
+
+    def __init__(self, app, limit_anonymous=100, limit_authenticated=200, window=60):
+        super().__init__(app)
+        self.limit_anonymous = limit_anonymous
+        self.limit_authenticated = limit_authenticated
+        self.window = window
+        self.redis = get_redis_client()
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        if request.url.path in ["/health", "/metrics"]:
+            return await call_next(request)
+
+        client_ip = request.client.host if request.client else "unknown"
+        is_authenticated = self._is_authenticated(request)
+        limit = self.limit_authenticated if is_authenticated else self.limit_anonymous
+        window_start = int(time.time() // self.window) * self.window
+        key_suffix = f"user_{request.state.user_id}" if hasattr(request.state, 'user_id') and is_authenticated else f"ip_{client_ip}"
+        key = f"rate:{key_suffix}:{window_start}"
+
+        if self.redis:
+            try:
+                count = self.redis.incr(key)
+                if count == 1:
+                    self.redis.expire(key, self.window)
+                if count > limit:
+                    return Response(
+                        content='{"detail": "Too many requests"}',
+                        status_code=429,
+                        headers={"Retry-After": str(self.window)}
+                    )
+            except redis.RedisError:
+                pass  # Allow request if Redis fails
+
+        return await call_next(request)
+
+    def _is_authenticated(self, request: Request) -> bool:
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return False
+        try:
+            from jose import jwt
+            token = auth_header.split(" ")[1]
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            return payload.get("type") == "access"
+        except:
+            return False
 
 
-def _is_authenticated_request(request: Request) -> bool:
-    auth = request.headers.get("authorization") or ""
-    if not auth.lower().startswith("bearer "):
-        return False
-    token = auth.split(" ", 1)[1].strip()
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload.get("type") == "access"
-    except JWTError:
-        return False
+class LoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware для логирования запросов."""
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        start_time = time.time()
+        response = await call_next(request)
+        duration = time.time() - start_time
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info(
+            f"{request.method} {request.url.path} {response.status_code} {duration:.3f}s from {client_ip}"
+        )
+        return response
+
+
+class PrometheusMiddleware(BaseHTTPMiddleware):
+    """Prometheus middleware для метрик."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.http_requests_total = Counter(
+            "http_requests_total",
+            "Total HTTP requests",
+            ["method", "endpoint", "status_code"]
+        )
+        self.http_request_duration_seconds = Histogram(
+            "http_request_duration_seconds",
+            "HTTP request duration",
+            ["method", "endpoint"],
+            buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5]
+        )
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        start_time = time.time()
+        response = await call_next(request)
+        duration = time.time() - start_time
+
+        endpoint = self._normalize_endpoint(request.url.path)
+        self.http_requests_total.labels(
+            method=request.method,
+            endpoint=endpoint,
+            status_code=str(response.status_code)
+        ).inc()
+        self.http_request_duration_seconds.labels(
+            method=request.method,
+            endpoint=endpoint
+        ).observe(duration)
+
+        return response
+
+    def _normalize_endpoint(self, path: str) -> str:
+        if path.startswith("/conferences/") and len(path.split("/")) > 2:
+            return "/conferences/{id}"
+        return path
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """CSP и прочие заголовки (снижение XSS)."""
+    """Middleware для заголовков безопасности."""
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
-        path = request.url.path
-        # Swagger UI (/docs) грузит скрипты с cdn.jsdelivr.net — строгий CSP ломает страницу.
-        if path.startswith("/docs") or path.startswith("/redoc"):
+
+        # Basic security headers
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # CSP
+        if request.url.path.startswith("/docs") or request.url.path.startswith("/redoc"):
             csp = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
@@ -76,111 +156,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "base-uri 'self'; "
                 "form-action 'self'"
             )
-        response.headers.setdefault("Content-Security-Policy", csp)
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=()")
+        response.headers["Content-Security-Policy"] = csp
+
         return response
-
-
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Логирование метода, пути, статуса, длительности в stdout и файл."""
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        start = time.perf_counter()
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
-        status_code = response.status_code
-        msg = (
-            f"{request.method} {request.url.path} "
-            f"status={status_code} duration_ms={duration_ms:.2f}"
-        )
-        logger.info(msg)
-        if HTTP_ERRORS and status_code >= 400:
-            cls = "4xx" if status_code < 500 else "5xx"
-            HTTP_ERRORS.labels(status_class=cls).inc()
-        return response
-
-
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    """
-    Лимит запросов в минуту на IP: 100 без токена, 200 с валидным access JWT.
-    Использует Redis INCR + EXPIRE; при недоступности Redis — пропускает.
-    """
-
-    def __init__(self, app, redis_url: str | None = None):
-        super().__init__(app)
-        self._redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        self._redis = None
-
-    def _get_redis(self):
-        if self._redis is not None:
-            return self._redis
-        try:
-            import redis
-
-            self._redis = redis.from_url(self._redis_url, decode_responses=True)
-            self._redis.ping()
-        except Exception:
-            self._redis = False
-        return self._redis
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        path = request.url.path
-        if (
-            path in ("/metrics", "/health", "/openapi.json")
-            or path.startswith("/docs")
-            or path.startswith("/redoc")
-        ):
-            return await call_next(request)
-
-        r = self._get_redis()
-        if not r:
-            return await call_next(request)
-
-        ip = _client_ip(request)
-        authed = _is_authenticated_request(request)
-        limit = 200 if authed else 100
-        prefix = "rl:auth" if authed else "rl:anon"
-        key = f"{prefix}:{ip}"
-
-        try:
-            n = r.incr(key)
-            if n == 1:
-                r.expire(key, 60)
-            if n > limit:
-                return Response(
-                    content='{"detail":"Too many requests. Try again later."}',
-                    status_code=429,
-                    media_type="application/json",
-                )
-        except Exception:
-            pass
-
-        return await call_next(request)
-
-
-def setup_logging(log_file: str | None = None) -> None:
-    """Настройка root logger: stdout + опционально файл."""
-    log_file = log_file or os.getenv("LOG_FILE", "logs/app.log")
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-
-    if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
-        sh = logging.StreamHandler()
-        sh.setFormatter(fmt)
-        root.addHandler(sh)
-
-    os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
-    try:
-        fh = logging.FileHandler(log_file, encoding="utf-8")
-        fh.setFormatter(fmt)
-        if not any(
-            isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == fh.baseFilename
-            for h in root.handlers
-        ):
-            root.addHandler(fh)
-    except OSError:
-        pass

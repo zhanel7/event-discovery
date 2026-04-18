@@ -1,29 +1,35 @@
-"""Операции с БД."""
-from typing import Optional, Tuple
+"""CRUD operations for users and conferences."""
+from typing import List, Optional, Tuple
+from uuid import UUID
 
-from sqlalchemy import asc, desc, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import desc, func, or_
+from sqlalchemy.orm import Session, joinedload
 
 from models import Conference, User
 from schemas import ConferenceCreate, ConferenceUpdate
 
 
+def get_user_by_email(db: Session, email: str) -> Optional[User]:
+    """Get user by email."""
+    return db.query(User).filter(User.email == email).first()
+
+
+def get_user_by_id(db: Session, user_id: UUID) -> Optional[User]:
+    """Get user by ID."""
+    return db.query(User).filter(User.id == user_id).first()
+
+
 def create_user(db: Session, email: str, hashed_password: str, role: str = "user") -> User:
-    user = User(email=email, hashed_password=hashed_password, role=role)
+    """Create a new user."""
+    user = User(email=email, password_hash=hashed_password, role=role)
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
 
 
-def list_users(db: Session, skip: int = 0, limit: int = 100) -> Tuple[list[User], int]:
-    q = db.query(User)
-    total = q.count()
-    items = q.order_by(User.id).offset(skip).limit(limit).all()
-    return items, total
-
-
-def update_user_role(db: Session, user_id: int, new_role: str) -> Optional[User]:
+def update_user_role(db: Session, user_id: UUID, new_role: str) -> Optional[User]:
+    """Update user role."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return None
@@ -33,101 +39,123 @@ def update_user_role(db: Session, user_id: int, new_role: str) -> Optional[User]
     return user
 
 
-def create_conference(db: Session, data: ConferenceCreate, user_id: int) -> Conference:
-    conf = Conference(
-        title=data.title,
-        description=data.description or "",
-        start_date=data.start_date,
-        end_date=data.end_date,
-        location=data.location or "",
-        cfp_deadline=data.cfp_deadline,
-        category=data.category or "",
-        user_id=user_id,
+def list_users(db: Session, skip: int = 0, limit: int = 100) -> Tuple[List[User], int]:
+    """List users with pagination."""
+    query = db.query(User)
+    total = query.count()
+    users = query.order_by(User.created_at).offset(skip).limit(limit).all()
+    return users, total
+
+
+def create_conference(db: Session, conference_data: ConferenceCreate, owner_id: UUID) -> Conference:
+    """Create a new conference."""
+    conference = Conference(
+        title=conference_data.title,
+        description=conference_data.description,
+        start_date=conference_data.start_date,
+        end_date=conference_data.end_date,
+        location=conference_data.location,
+        cfp_deadline=conference_data.cfp_deadline,
+        category=conference_data.category,
+        owner_id=owner_id,
     )
-    db.add(conf)
+    db.add(conference)
     db.commit()
-    db.refresh(conf)
-    return conf
+    db.refresh(conference)
+    return conference
 
 
-def get_conference(db: Session, conf_id: int) -> Optional[Conference]:
-    return db.query(Conference).filter(Conference.id == conf_id).first()
+def get_conference(db: Session, conference_id: UUID) -> Optional[Conference]:
+    """Get conference by ID."""
+    return db.query(Conference).filter(Conference.id == conference_id).first()
 
 
 def list_conferences(
     db: Session,
-    skip: int,
-    limit: int,
-    search: Optional[str],
-    category: Optional[str],
-    sort: str,
-) -> Tuple[list[Conference], int]:
-    q = db.query(Conference)
+    skip: int = 0,
+    limit: int = 10,
+    search: Optional[str] = None,
+    category: Optional[str] = None,
+    sort_by: str = "start_date",
+    sort_order: str = "asc",
+) -> Tuple[List[Conference], int]:
+    """List conferences with filters and pagination."""
+    query = db.query(Conference).options(joinedload(Conference.owner))
+
+    # Apply search filter
     if search:
-        term = f"%{search.strip()}%"
-        q = q.filter(
+        search_term = f"%{search}%"
+        query = query.filter(
             or_(
-                Conference.title.ilike(term),
-                Conference.description.ilike(term),
+                Conference.title.ilike(search_term),
+                Conference.description.ilike(search_term),
+                Conference.location.ilike(search_term),
             )
         )
+
+    # Apply category filter
     if category:
-        q = q.filter(Conference.category == category)
+        query = query.filter(Conference.category == category)
 
-    total = q.count()
-    order = asc(Conference.start_date) if sort == "asc" else desc(Conference.start_date)
-    items = q.order_by(order).offset(skip).limit(limit).all()
-    return items, total
+    # Get total count
+    total = query.count()
+
+    # Apply sorting
+    if sort_by == "start_date":
+        order_column = Conference.start_date
+    elif sort_by == "created_at":
+        order_column = Conference.created_at
+    else:
+        order_column = Conference.start_date
+
+    if sort_order == "desc":
+        query = query.order_by(desc(order_column))
+    else:
+        query = query.order_by(order_column)
+
+    # Apply pagination
+    conferences = query.offset(skip).limit(limit).all()
+    return conferences, total
 
 
-def update_conference(
-    db: Session, conf_id: int, data: ConferenceUpdate
-) -> Optional[Conference]:
-    conf = get_conference(db, conf_id)
-    if not conf:
+def update_conference(db: Session, conference_id: UUID, update_data: ConferenceUpdate) -> Optional[Conference]:
+    """Update conference."""
+    conference = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conference:
         return None
-    payload = data.model_dump(exclude_unset=True)
-    if "start_date" in payload and "end_date" in payload:
-        if payload["end_date"] < payload["start_date"]:
-            raise ValueError("end_date must be >= start_date")
-    elif "end_date" in payload and conf.start_date:
-        if payload["end_date"] < conf.start_date:
-            raise ValueError("end_date must be >= start_date")
-    elif "start_date" in payload and conf.end_date:
-        if conf.end_date < payload["start_date"]:
-            raise ValueError("end_date must be >= start_date")
-    for k, v in payload.items():
-        setattr(conf, k, v)
+
+    update_dict = update_data.model_dump(exclude_unset=True)
+    for key, value in update_dict.items():
+        setattr(conference, key, value)
+
     db.commit()
-    db.refresh(conf)
-    return conf
+    db.refresh(conference)
+    return conference
 
 
-def delete_conference(db: Session, conf_id: int) -> bool:
-    conf = get_conference(db, conf_id)
-    if not conf:
+def delete_conference(db: Session, conference_id: UUID) -> bool:
+    """Delete conference."""
+    conference = db.query(Conference).filter(Conference.id == conference_id).first()
+    if not conference:
         return False
-    db.delete(conf)
+    db.delete(conference)
     db.commit()
     return True
 
 
-def list_conferences_by_user(db: Session, user_id: int) -> list[Conference]:
+def list_conferences_by_owner(db: Session, owner_id: UUID) -> List[Conference]:
+    """List conferences by owner."""
     return (
         db.query(Conference)
-        .filter(Conference.user_id == user_id)
-        .order_by(desc(Conference.start_date))
+        .filter(Conference.owner_id == owner_id)
+        .order_by(desc(Conference.created_at))
         .all()
     )
 
 
-def list_all_conferences_admin(db: Session, skip: int, limit: int) -> Tuple[list[Conference], int]:
-    total = db.query(func.count(Conference.id)).scalar() or 0
-    items = (
-        db.query(Conference)
-        .order_by(desc(Conference.id))
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
-    return items, total
+def list_all_conferences_admin(db: Session, skip: int = 0, limit: int = 100) -> Tuple[List[Conference], int]:
+    """List all conferences for admin."""
+    query = db.query(Conference)
+    total = query.count()
+    conferences = query.order_by(desc(Conference.created_at)).offset(skip).limit(limit).all()
+    return conferences, total

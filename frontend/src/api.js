@@ -1,60 +1,85 @@
-/**
- * Базовый URL API (в Docker: тот же хост, порт 8000).
- */
-export function getApiBaseUrl() {
-  return import.meta.env.VITE_API_URL || "http://localhost:8000";
-}
+import axios from 'axios'
 
-const API_BASE = getApiBaseUrl();
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-function getTokens() {
-  const access = localStorage.getItem("access_token");
-  const refresh = localStorage.getItem("refresh_token");
-  return { access, refresh };
-}
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
 
-export function setTokens(access, refresh) {
-  if (access) localStorage.setItem("access_token", access);
-  if (refresh) localStorage.setItem("refresh_token", refresh);
-}
-
-export function clearTokens() {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-}
-
-async function tryRefresh() {
-  const { refresh } = getTokens();
-  if (!refresh) return null;
-  const r = await fetch(`${API_BASE}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refresh }),
-  });
-  if (!r.ok) return null;
-  const data = await r.json();
-  setTokens(data.access_token, data.refresh_token);
-  return data.access_token;
-}
-
-export async function apiFetch(path, options = {}) {
-  const headers = { ...(options.headers || {}) };
-  const { access } = getTokens();
-  if (access && !headers.Authorization) {
-    headers.Authorization = `Bearer ${access}`;
-  }
-  if (options.body && !headers["Content-Type"]) {
-    headers["Content-Type"] = "application/json";
-  }
-  let res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  if (res.status === 401 && access) {
-    const newAccess = await tryRefresh();
-    if (newAccess) {
-      headers.Authorization = `Bearer ${newAccess}`;
-      res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+// Request interceptor to add auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
     }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
   }
-  return res;
+)
+
+// Response interceptor to handle token refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        const refreshToken = localStorage.getItem('refresh_token')
+        if (refreshToken) {
+          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+            refresh_token: refreshToken,
+          })
+
+          const { access_token, refresh_token } = response.data
+          localStorage.setItem('access_token', access_token)
+          localStorage.setItem('refresh_token', refresh_token)
+
+          originalRequest.headers.Authorization = `Bearer ${access_token}`
+          return api(originalRequest)
+        }
+      } catch (refreshError) {
+        // Refresh failed, redirect to login
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        window.location.href = '/login'
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
+
+export const authAPI = {
+  login: (credentials) => api.post('/auth/login', credentials),
+  register: (userData) => api.post('/auth/register', userData),
+  refresh: (refreshToken) => api.post('/auth/refresh', { refresh_token: refreshToken }),
+  logout: () => api.post('/auth/logout'),
+  getProfile: () => api.get('/auth/me'),
 }
 
-export { API_BASE };
+export const conferencesAPI = {
+  getConferences: (params) => api.get('/conferences', { params }),
+  getConference: (id) => api.get(`/conferences/${id}`),
+  createConference: (data) => api.post('/conferences', data),
+  updateConference: (id, data) => api.put(`/conferences/${id}`, data),
+  deleteConference: (id) => api.delete(`/conferences/${id}`),
+  getUserConferences: () => api.get('/users/me/conferences'),
+}
+
+export const adminAPI = {
+  getUsers: (params) => api.get('/admin/users', { params }),
+  updateUserRole: (userId, data) => api.put(`/admin/users/${userId}/role`, data),
+  getAllConferences: (params) => api.get('/admin/conferences', { params }),
+  deleteAnyConference: (conferenceId) => api.delete(`/admin/conferences/${conferenceId}`),
+}
+
+export default api

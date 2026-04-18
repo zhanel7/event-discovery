@@ -1,191 +1,350 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { apiFetch } from "../api.js";
-import { useAuth } from "../context/AuthContext.jsx";
+import { useState, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { conferencesAPI } from '../api'
+import { Edit, Calendar, MapPin, Tag, FileText, AlertCircle, Save, Trash2, Eye } from 'lucide-react'
 
-function toLocal(dt) {
-  if (!dt) return "";
-  const d = new Date(dt);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-    d.getMinutes()
-  )}`;
+function formatDateTimeForInput(dateString) {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 export default function EditConference() {
-  const { id } = useParams();
-  const { user } = useAuth();
-  const nav = useNavigate();
-  const [conf, setConf] = useState(null);
-  const [form, setForm] = useState({});
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(true);
+  const { id } = useParams()
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const [conference, setConference] = useState(null)
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    start_date: '',
+    end_date: '',
+    location: '',
+    category: '',
+    cfp_deadline: '',
+  })
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    (async () => {
-      const r = await apiFetch(`/conferences/${id}`);
-      if (!r.ok) {
-        setErr("Не найдено");
-        setLoading(false);
-        return;
+    loadConference()
+  }, [id])
+
+  const loadConference = async () => {
+    try {
+      setLoading(true)
+      const response = await conferencesAPI.getConference(id)
+      const conf = response.data
+      setConference(conf)
+      setFormData({
+        title: conf.title,
+        description: conf.description || '',
+        start_date: formatDateTimeForInput(conf.start_date),
+        end_date: formatDateTimeForInput(conf.end_date),
+        location: conf.location || '',
+        category: conf.category || '',
+        cfp_deadline: formatDateTimeForInput(conf.cfp_deadline),
+      })
+    } catch (err) {
+      setError('Conference not found')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const canEdit = user && conference && (user.id === conference.user_id || user.role === 'admin')
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    })
+  }
+
+  const validateForm = () => {
+    const startDate = new Date(formData.start_date)
+    const endDate = new Date(formData.end_date)
+    const cfpDeadline = formData.cfp_deadline ? new Date(formData.cfp_deadline) : null
+
+    if (endDate <= startDate) {
+      return 'End date must be after start date'
+    }
+
+    if (cfpDeadline && cfpDeadline >= startDate) {
+      return 'CFP deadline must be before start date'
+    }
+
+    return null
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!canEdit) return
+
+    setError('')
+    setSaving(true)
+
+    const validationError = validateForm()
+    if (validationError) {
+      setError(validationError)
+      setSaving(false)
+      return
+    }
+
+    try {
+      const conferenceData = {
+        ...formData,
+        start_date: new Date(formData.start_date).toISOString(),
+        end_date: new Date(formData.end_date).toISOString(),
+        cfp_deadline: formData.cfp_deadline ? new Date(formData.cfp_deadline).toISOString() : null,
       }
-      const c = await r.json();
-      setConf(c);
-      setForm({
-        title: c.title,
-        description: c.description || "",
-        start_date: toLocal(c.start_date),
-        end_date: toLocal(c.end_date),
-        location: c.location || "",
-        cfp_deadline: c.cfp_deadline ? toLocal(c.cfp_deadline) : "",
-        category: c.category || "",
-      });
-      setLoading(false);
-    })();
-  }, [id]);
 
-  const canEdit =
-    user && conf && (user.id === conf.user_id || user.role === "admin");
-
-  const change = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const save = async (e) => {
-    e.preventDefault();
-    if (!canEdit) return;
-    setErr("");
-    const body = {
-      title: form.title,
-      description: form.description,
-      start_date: new Date(form.start_date).toISOString(),
-      end_date: new Date(form.end_date).toISOString(),
-      location: form.location,
-      category: form.category,
-      cfp_deadline: form.cfp_deadline ? new Date(form.cfp_deadline).toISOString() : null,
-    };
-    const r = await apiFetch(`/conferences/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      setErr(typeof data.detail === "string" ? data.detail : "Ошибка сохранения");
-      return;
+      await conferencesAPI.updateConference(id, conferenceData)
+      await loadConference() // Reload to get updated data
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to update conference')
+    } finally {
+      setSaving(false)
     }
-    setConf(data);
-  };
+  }
 
-  const remove = async () => {
-    if (!canEdit) return;
-    if (!window.confirm("Удалить конференцию?")) return;
-    const r = await apiFetch(`/conferences/${id}`, { method: "DELETE" });
-    if (!r.ok) {
-      alert("Ошибка удаления");
-      return;
+  const handleDelete = async () => {
+    if (!canEdit) return
+
+    if (!window.confirm('Are you sure you want to delete this conference? This action cannot be undone.')) {
+      return
     }
-    nav("/");
-  };
 
-  if (loading) return <p className="text-slate-500">Загрузка…</p>;
-  if (!conf) return <p className="text-red-400">{err || "Нет данных"}</p>;
+    try {
+      await conferencesAPI.deleteConference(id)
+      navigate('/')
+    } catch (err) {
+      alert('Failed to delete conference')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      </div>
+    )
+  }
+
+  if (!conference) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600 text-lg">Conference not found</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="mx-auto max-w-xl rounded-xl border border-slate-800 bg-slate-900/60 p-6">
-      <h1 className="text-xl font-semibold text-white">Конференция #{conf.id}</h1>
-      {!canEdit && (
-        <p className="mt-2 text-sm text-amber-400">Только просмотр (не ваш материал).</p>
-      )}
-      <form onSubmit={save} className="mt-4 space-y-3">
-        <div>
-          <label className="text-sm text-slate-400">Название</label>
-          <input
-            required
-            disabled={!canEdit}
-            value={form.title}
-            onChange={change("title")}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white disabled:opacity-60"
-          />
-        </div>
-        <div>
-          <label className="text-sm text-slate-400">Описание</label>
-          <textarea
-            rows={4}
-            disabled={!canEdit}
-            value={form.description}
-            onChange={change("description")}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white disabled:opacity-60"
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className="text-sm text-slate-400">Начало</label>
-            <input
-              type="datetime-local"
-              required
-              disabled={!canEdit}
-              value={form.start_date}
-              onChange={change("start_date")}
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white disabled:opacity-60"
-            />
+    <div className="max-w-2xl mx-auto py-8 px-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 bg-primary-100 rounded-lg">
+            {canEdit ? <Edit className="h-6 w-6 text-primary-600" /> : <Eye className="h-6 w-6 text-primary-600" />}
           </div>
           <div>
-            <label className="text-sm text-slate-400">Конец</label>
-            <input
-              type="datetime-local"
-              required
-              disabled={!canEdit}
-              value={form.end_date}
-              onChange={change("end_date")}
-              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white disabled:opacity-60"
-            />
+            <h1 className="text-2xl font-bold text-gray-900">
+              {canEdit ? 'Edit Conference' : 'View Conference'}
+            </h1>
+            <p className="text-gray-600">
+              {canEdit ? 'Update the conference details' : 'Conference details (read-only)'}
+            </p>
           </div>
         </div>
-        <div>
-          <label className="text-sm text-slate-400">Локация</label>
-          <input
-            disabled={!canEdit}
-            value={form.location}
-            onChange={change("location")}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white disabled:opacity-60"
-          />
-        </div>
-        <div>
-          <label className="text-sm text-slate-400">Дедлайн CFP</label>
-          <input
-            type="datetime-local"
-            disabled={!canEdit}
-            value={form.cfp_deadline}
-            onChange={change("cfp_deadline")}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white disabled:opacity-60"
-          />
-        </div>
-        <div>
-          <label className="text-sm text-slate-400">Категория</label>
-          <input
-            disabled={!canEdit}
-            value={form.category}
-            onChange={change("category")}
-            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white disabled:opacity-60"
-          />
-        </div>
-        {err && <p className="text-sm text-red-400">{err}</p>}
-        {canEdit && (
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="submit"
-              className="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white hover:bg-emerald-500"
-            >
-              Сохранить
-            </button>
-            <button
-              type="button"
-              onClick={remove}
-              className="rounded-lg border border-red-800 px-4 py-2 text-red-300 hover:bg-red-950"
-            >
-              Удалить
-            </button>
+
+        {!canEdit && (
+          <div className="mb-6 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-sm text-yellow-800">
+              You can only view this conference. Only the owner or an admin can edit it.
+            </p>
           </div>
         )}
-      </form>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Title */}
+          <div>
+            <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
+              Conference Title *
+            </label>
+            <input
+              type="text"
+              id="title"
+              name="title"
+              required
+              disabled={!canEdit}
+              value={formData.title}
+              onChange={handleChange}
+              className="input disabled:bg-gray-100 disabled:cursor-not-allowed"
+              placeholder="Enter conference title"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              id="description"
+              name="description"
+              rows={4}
+              disabled={!canEdit}
+              value={formData.description}
+              onChange={handleChange}
+              className="input disabled:bg-gray-100 disabled:cursor-not-allowed"
+              placeholder="Provide a detailed description of the conference"
+            />
+          </div>
+
+          {/* Dates */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="start_date" className="block text-sm font-medium text-gray-700 mb-1">
+                <Calendar className="inline h-4 w-4 mr-1" />
+                Start Date & Time *
+              </label>
+              <input
+                type="datetime-local"
+                id="start_date"
+                name="start_date"
+                required
+                disabled={!canEdit}
+                value={formData.start_date}
+                onChange={handleChange}
+                className="input disabled:bg-gray-100 disabled:cursor-not-allowed"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="end_date" className="block text-sm font-medium text-gray-700 mb-1">
+                <Calendar className="inline h-4 w-4 mr-1" />
+                End Date & Time *
+              </label>
+              <input
+                type="datetime-local"
+                id="end_date"
+                name="end_date"
+                required
+                disabled={!canEdit}
+                value={formData.end_date}
+                onChange={handleChange}
+                className="input disabled:bg-gray-100 disabled:cursor-not-allowed"
+              />
+            </div>
+          </div>
+
+          {/* Location */}
+          <div>
+            <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-1">
+              <MapPin className="inline h-4 w-4 mr-1" />
+              Location
+            </label>
+            <input
+              type="text"
+              id="location"
+              name="location"
+              disabled={!canEdit}
+              value={formData.location}
+              onChange={handleChange}
+              className="input disabled:bg-gray-100 disabled:cursor-not-allowed"
+              placeholder="City, Country or Virtual"
+            />
+          </div>
+
+          {/* Category */}
+          <div>
+            <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+              <Tag className="inline h-4 w-4 mr-1" />
+              Category
+            </label>
+            <input
+              type="text"
+              id="category"
+              name="category"
+              disabled={!canEdit}
+              value={formData.category}
+              onChange={handleChange}
+              className="input disabled:bg-gray-100 disabled:cursor-not-allowed"
+              placeholder="e.g., Computer Science, Medicine, Engineering"
+            />
+          </div>
+
+          {/* CFP Deadline */}
+          <div>
+            <label htmlFor="cfp_deadline" className="block text-sm font-medium text-gray-700 mb-1">
+              <FileText className="inline h-4 w-4 mr-1" />
+              CFP Deadline
+            </label>
+            <input
+              type="datetime-local"
+              id="cfp_deadline"
+              name="cfp_deadline"
+              disabled={!canEdit}
+              value={formData.cfp_deadline}
+              onChange={handleChange}
+              className="input disabled:bg-gray-100 disabled:cursor-not-allowed"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Optional: Deadline for paper submissions
+            </p>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          {canEdit && (
+            <div className="flex gap-4">
+              <button
+                type="submit"
+                disabled={saving}
+                className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-5 w-5" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-md transition-colors flex items-center gap-2"
+              >
+                <Trash2 className="h-5 w-5" />
+                Delete
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="btn-secondary w-full"
+          >
+            Back to Conferences
+          </button>
+        </form>
+      </div>
     </div>
-  );
+  )
 }
