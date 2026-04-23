@@ -195,3 +195,10 @@ VITE_API_URL=https://event-discovery-pim5.onrender.com
 - Latency p50 — 5ms
 - HTTP errors — 0
 
+## 👥 Команда разработчиков
+
+| Участник | Роль | Вклад |
+|----------|------|-------|
+| Жанель  |  Backend Developer | FastAPI, PostgreSQL, JWT Auth, REST API, Docker, CI/CD, Tests |
+| Диана | Frontend Developer | React, Tailwind CSS, UI/UX Design, Conference Cards, Animations |
+| Алтынай | DevOps / QA Engineer | Docker Compose, Prometheus, Grafana, k6 Load Testing, Deployment |
