@@ -1,336 +1,197 @@
-# Event Discovery Service
+# 🎓 Event Discovery Service
 
-Сервис поиска и управления научными конференциями: **FastAPI**, **React + Tailwind**, **PostgreSQL**, **Redis** (кэш + rate limit), **Prometheus**, **Grafana**, **Docker Compose**, **GitHub Actions**, **k6**.
+> Сервис поиска и управления научными конференциями мирового уровня
 
-## Живой деплой
+[![CI/CD](https://github.com/zhanel7/event-discovery/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/zhanel7/event-discovery/actions)
+[![Tests](https://img.shields.io/badge/tests-35%2F35%20passed-brightgreen)](https://github.com/zhanel7/event-discovery)
+[![Docker](https://img.shields.io/badge/docker-ready-blue)](https://hub.docker.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-blue)](https://react.dev)
 
-- **Render (пример):** замените на вашу ссылку после деплоя, например `https://event-discovery-api.onrender.com`
-- Фронтенд на Render обычно отдаётся как Static Site; укажите `VITE_API_URL` на URL бэкенда.
+## 🌐 Живой деплой
 
-## Как запустить проект (локально)
+| Сервис | URL |
+|--------|-----|
+| 🔵 Backend API | https://event-discovery-pim5.onrender.com |
+| 📖 Swagger Docs | https://event-discovery-pim5.onrender.com/docs |
+| 🟢 Frontend | https://event-discovery-frontend.onrender.com |
+| 💻 GitHub | https://github.com/zhanel7/event-discovery |
 
-1. Установите [Docker Desktop](https://docs.docker.com/desktop/) и **запустите** его (должен быть статус *Running*).
-2. Откройте терминал в папке проекта `event-discovery` (где лежит `docker-compose.yml`).
+## 📋 О проекте
 
-**Первый запуск или после изменений в коде:**
+**Event Discovery Service** — полнофункциональный веб-сервис для поиска научных конференций (аналог WikiCFP). Позволяет исследователям находить конференции, отслеживать дедлайны CFP и управлять своими заявками.
+
+### Стек технологий
+
+| Слой | Технологии |
+|------|-----------|
+| **Backend** | FastAPI, SQLAlchemy, PostgreSQL, Redis, JWT |
+| **Frontend** | React 18, Vite, Tailwind CSS, Axios |
+| **DevOps** | Docker, Docker Compose, GitHub Actions |
+| **Мониторинг** | Prometheus, Grafana |
+| **Тесты** | Pytest (35 тестов: 15 unit + 20 integration) |
+
+## 🚀 Быстрый старт
+
+### Требования
+- [Docker Desktop](https://docs.docker.com/desktop/) (запущен)
+- Git
+
+### Запуск за 1 команду
 
 ```bash
+git clone https://github.com/zhanel7/event-discovery.git
+cd event-discovery
 docker compose up --build
 ```
 
-**Обычный запуск (образы уже собраны):**
+Подождите 30-60 секунд, затем откройте:
+
+| Сервис | URL |
+|--------|-----|
+| 🌐 Frontend | http://localhost:3000 |
+| 📖 Swagger UI | http://localhost:8000/docs |
+| 📊 Prometheus | http://localhost:9090 |
+| 📈 Grafana | http://localhost:3001 |
+
+### Учётные данные по умолчанию
+
+| Сервис | Email / Login | Пароль |
+|--------|--------------|--------|
+| Admin аккаунт | admin@example.com | Admin12345 |
+| Grafana | admin | admin |
+
+## ✅ Соответствие критериям курса
+
+| # | Критерий | Реализация | Статус |
+|---|----------|------------|--------|
+| 1 | Аутентификация | JWT access (30 мин) + refresh (7 дней), bcrypt | ✅ |
+| 2 | Роли пользователей | `user` / `admin`, защищённые маршруты | ✅ |
+| 3 | CRUD операции | Полный цикл конференций | ✅ |
+| 4 | Поиск и фильтрация | `search`, `category`, `sort`, пагинация | ✅ |
+| 5 | Frontend | React + Tailwind, тёмная тема, анимации | ✅ |
+| 6 | Безопасность | bcrypt, JWT, CORS, rate limit, CSP headers | ✅ |
+| 7 | Кэширование | Redis кэш конференций + rate limiting | ✅ |
+| 8 | Мониторинг | Prometheus метрики + Grafana дашборд | ✅ |
+| 9 | Docker | Multi-stage build, non-root user, compose | ✅ |
+| 10 | CI/CD | GitHub Actions: lint + test + build | ✅ |
+| 11 | Тесты | **35/35 passed** (15 unit + 20 integration) | ✅ |
+| 12 | Деплой | Render.com (backend + frontend) | ✅ |
+| 13 | Документация | README + Swagger + docs/ | ✅ |
+
+## 🧪 Тесты
 
 ```bash
-docker compose up
+# Запуск внутри Docker
+docker compose exec backend pytest test_unit.py test_integration.py -v
+
+# Результат: 35 passed ✅
 ```
 
-**Остановка:** `Ctrl+C` в том же окне, либо:
+### Покрытие тестами
 
-```bash
-docker compose down
-```
+| Категория | Тестов | Что тестируется |
+|-----------|--------|-----------------|
+| Unit тесты | 15 | JWT, bcrypt, Pydantic валидация |
+| Integration тесты | 20 | API эндпоинты, авторизация, CRUD |
+| **Итого** | **35** | **Все passed ✅** |
 
-Если нужно **полностью пересобрать** бэкенд/фронт:
+## 📡 API Reference
 
-```bash
-docker compose build --no-cache
-docker compose up
-```
+Base URL: `https://event-discovery-pim5.onrender.com`
 
-Подождите 30–60 секунд после старта, затем откройте ссылки ниже. Если сразу после запуска API не отвечает — обновите страницу через несколько секунд (контейнеры поднимаются по очереди).
+### Аутентификация
 
-После запуска:
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| POST | `/auth/register` | Регистрация нового пользователя |
+| POST | `/auth/login` | Вход → access + refresh токены |
+| POST | `/auth/refresh` | Обновление токенов |
+| GET | `/auth/me` | Данные текущего пользователя |
 
-| Сервис    | URL |
-|-----------|-----|
-| API + Swagger | http://localhost:8000/docs |
-| Фронтенд (nginx) | http://localhost:3000 |
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3001 (логин `admin` / `admin`) |
+### Конференции
 
-**Учётная запись администратора по умолчанию** (создаётся скриптом при первом старте, если пользователя ещё нет):
+| Метод | Эндпоинт | Описание | Auth |
+|-------|----------|----------|------|
+| GET | `/conferences` | Список с поиском и фильтрами | — |
+| POST | `/conferences` | Создать конференцию | ✅ |
+| GET | `/conferences/{id}` | Детали конференции | — |
+| PUT | `/conferences/{id}` | Обновить (автор/admin) | ✅ |
+| DELETE | `/conferences/{id}` | Удалить (автор/admin) | ✅ |
+| GET | `/users/me/conferences` | Мои конференции | ✅ |
 
-- Email: `admin@example.com`
-- Пароль: `Admin12345`
+### Администрирование
 
-Переопределение через переменные окружения: `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
-
-## Переменные окружения (важные)
-
-| Переменная | Описание |
-|------------|----------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis для кэша списка конференций и rate limiting |
-| `JWT_SECRET_KEY` | Секрет подписи JWT (в продакшене — длинная случайная строка) |
-| `FRONTEND_ORIGIN` | Одно значение CORS (если не задано `FRONTEND_ORIGINS`) |
-| `FRONTEND_ORIGINS` | Несколько origin через запятую (приоритетнее `FRONTEND_ORIGIN`) |
-| `VITE_API_URL` | При сборке фронтенда — базовый URL API |
-
-Шаблон для копирования: [`.env.example`](.env.example).
-
-## Соответствие критериям курса (чеклист)
-
-| Критерий | Реализация |
-|----------|------------|
-| Аутентификация | Регистрация, логин, refresh, logout, смена пароля; JWT access + refresh |
-| Роли | `user` / `admin`; админка только для `admin` |
-| CRUD конференций | Полный цикл + поля по ТЗ |
-| Поиск / фильтр / пагинация / сортировка | `search`, `category`, `skip`/`limit`/`total`, `sort=asc\|desc` |
-| Фронтенд | React, Tailwind, Router, AuthContext, защищённые маршруты, адаптив |
-| Безопасность | bcrypt, JWT, ORM, CSP (+ отдельная политика для `/docs`), CORS, rate limit, JWT в header |
-| Redis | Кэш списка конференций, rate limiting |
-| Мониторинг | Логи stdout + файл, Prometheus `/metrics`, Grafana дашборд |
-| Docker | Multi-stage backend (non-root), nginx frontend, compose-сеть `event_net` |
-| CI/CD | GitHub Actions: flake8, pytest, сборка образов |
-| Тесты | ≥10 unit, ≥10 integration (pytest) |
-| k6 | Сценарий регистрация → логин → конференция → поиск |
-| Документация | README, Swagger `/docs`, структура в `docs/` |
-
-## Устранение неполадок
-
-- **Порт 5432 занят** — в compose PostgreSQL проброшен на **5433** с хоста (см. `docker-compose.yml`).
-- **Порт 6379 занят** — Redis с хоста на **6380** (внутри сети контейнеров по-прежнему `redis:6379`).
-- **Docker Engine не запущен** — запустите Docker Desktop; ошибка `dockerDesktopLinuxEngine` / pipe означает, что демон недоступен.
-- **Бэкенд не отвечает первые секунды** — подождите и обновите страницу; смотрите логи: `docker compose logs -f backend`.
-- **Swagger пустой / не грузится** — для `/docs` CSP ослаблен (CDN jsdelivr); не отключайте без необходимости.
-- **CORS в браузере** — задайте `FRONTEND_ORIGINS` с вашим origin (включая `http://127.0.0.1:3000` при открытии по IP).
-
-## API (кратко)
-
-Базовый URL: `http://localhost:8000`
-
-- `POST /auth/register` — регистрация (`user` только)
-- `POST /auth/login` — access + refresh JWT
-- `POST /auth/refresh` — обновление пары токенов
-- `POST /auth/logout` — подсказка для клиента (токены сбрасываются на клиенте)
-- `GET /auth/me` — текущий пользователь
-- `POST /auth/change-password` — смена пароля
-- `GET /conferences` — список с `skip`, `limit`, `search`, `category`, `sort=asc|desc`, ответ с `total`
-- `POST /conferences` — создание (нужен Bearer)
-- `GET /conferences/{id}` — детали
-- `PUT /conferences/{id}` — правка (автор или admin)
-- `DELETE /conferences/{id}` — удаление (автор или admin)
-- `GET /users/me/conferences` — конференции текущего пользователя
-- `GET /admin/users`, `PUT /admin/users/{id}/role` — только admin
-- `GET /admin/conferences`, `DELETE /admin/conferences/{id}` — только admin
-- `GET /metrics` — метрики Prometheus
-
-Пример:
-
-```bash
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"Admin12345"}'
-```
-
-## Тесты
-
-```bash
-cd backend
-pip install -r requirements.txt
-pytest test_unit.py test_integration.py -v
-```
-
-## Нагрузочное тестирование (k6)
-
-С установленным [k6](https://k6.io/):
-
-```bash
-cd k6
-k6 run load-test.js
-```
-
-Опционально сохранить JSON summary и затем сгенерировать HTML-отчёт любым выбранным инструментом; заготовка отчёта: `k6/report.html`.
-
-## Мониторинг
-
-- Prometheus собирает `/metrics` с бэкенда.
-- В Grafana импортирован дашборд **Event Discovery API** (RPS, ошибки, p50/p95 задержки).
-
-### Скриншоты (добавьте в репозиторий при сдаче)
-
-- `docs/screenshots/grafana.png` — дашборд Grafana
-- `docs/screenshots/k6-report.png` — отчёт k6
-
-## CI/CD
-
-Файл `.github/workflows/ci-cd.yml`: flake8, pytest, сборка Docker-образов; шаги push в Docker Hub и деплой на Render отключены заглушками (`if: false`) — включите и задайте секреты при необходимости.
-
-## Структура репозитория
-
-Подробное дерево файлов: [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md).
-
-## Примечание по `frontend/public/index.html`
-
-Сборка **Vite** использует `frontend/index.html` в корне фронтенд-проекта. Папка `public/` предназначена для статических файлов (favicon и т.д.).
-
-## Локальное развитие без Docker
-
-Если вы хотите запустить проект локально с pip/npm:
-
-### Бэкенд
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-export DATABASE_URL=postgresql://postgres:postgres@localhost:5433/event_discovery
-export REDIS_URL=redis://localhost:6380/0
-export JWT_SECRET_KEY=your-secret-key-32-chars-min
-uvicorn main:app --reload --port 8000
-```
-
-### Фронтенд
-
-```bash
-cd frontend
-npm install
-npm run dev  # dev сервер на http://localhost:3000
-# или для production сборки:
-npm run build
-npm run preview
-```
-
-## Продакшн-переменные окружения
-
-Для развертывания на Render.com или любой другой платформе:
-
-```env
-DATABASE_URL=postgresql://user:pass@host:5432/db_name
-REDIS_URL=redis://user:pass@host:6379/0
-JWT_SECRET_KEY=generate-long-random-secure-key-32-chars-minimum
-ADMIN_EMAIL=your-admin@example.com
-ADMIN_PASSWORD=GenerateSecurePassword123
-FRONTEND_ORIGINS=https://your-domain.com
-LOG_FILE=/app/logs/app.log
-CONFERENCE_CACHE_TTL=300
-```
-
-## Примеры curl-запросов
-
-### Регистрация и логин
-
-```bash
-# Регистрация
-curl -X POST http://localhost:8000/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"user@example.com",
-    "password":"SecurePass123"
-  }'
-
-# Логин
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"user@example.com",
-    "password":"SecurePass123"
-  }'
-```
-
-### Работа с конференциями
-
-```bash
-# Получить access token из логина и сохранить
-TOKEN="your_access_token_here"
-
-# Создать конференцию
-curl -X POST http://localhost:8000/conferences \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "ICML 2026",
-    "description": "International Conference on Machine Learning",
-    "start_date": "2026-07-15T09:00:00Z",
-    "end_date": "2026-07-20T17:00:00Z",
-    "location": "Vienna, Austria",
-    "cfp_deadline": "2026-03-01T23:59:59Z",
-    "category": "AI"
-  }'
-
-# Список конференций с поиском и фильтром
-curl "http://localhost:8000/conferences?search=ICML&category=AI&skip=0&limit=10&sort=asc"
-
-# Получить детали конференции
-curl http://localhost:8000/conferences/1
-
-# Отредактировать конференцию
-curl -X PUT http://localhost:8000/conferences/1 \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "ICML 2026 - Updated"
-  }'
-
-# Удалить конференцию
-curl -X DELETE http://localhost:8000/conferences/1 \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### Админ-операции
-
-```bash
-# Список пользователей (только admin)
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  http://localhost:8000/admin/users
-
-# Изменить роль пользователя
-curl -X PUT http://localhost:8000/admin/users/2/role \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"role": "admin"}'
-
-# Список всех конференций в админ-панели
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  http://localhost:8000/admin/conferences
-
-# Удалить конференцию (admin)
-curl -X DELETE http://localhost:8000/admin/conferences/1 \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
-```
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/admin/users` | Все пользователи |
+| PUT | `/admin/users/{id}/role` | Изменить роль |
+| GET | `/admin/conferences` | Все конференции |
+| DELETE | `/admin/conferences/{id}` | Удалить любую |
 
 ### Мониторинг
 
+| Эндпоинт | Описание |
+|----------|----------|
+| GET `/health` | Health check (db + redis статус) |
+| GET `/metrics` | Prometheus метрики |
+
+### Пример использования
+
 ```bash
-# Проверка здоровья API
-curl http://localhost:8000/health
+# Логин
+curl -X POST https://event-discovery-pim5.onrender.com/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"Admin12345"}'
 
-# Метрики Prometheus
-curl http://localhost:8000/metrics
-
-# OpenAPI/Swagger схема
-curl http://localhost:8000/openapi.json
+# Создать конференцию
+curl -X POST https://event-discovery-pim5.onrender.com/conferences \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "ICML 2028",
+    "description": "International Conference on Machine Learning",
+    "start_date": "2028-07-15T09:00:00Z",
+    "end_date": "2028-07-20T17:00:00Z",
+    "location": "Vienna, Austria",
+    "cfp_deadline": "2027-03-01T23:59:59Z",
+    "category": "AI"
+  }'
 ```
 
-## Развертывание на Render.com
+## 🔧 Переменные окружения
 
-1. **Форк репозитория** на GitHub
-2. **Создайте PostgreSQL дату базу на Render.com**
-3. **Создайте Redis сервис** (опционально, для production)
-4. **Создайте Web Service for Backend:**
-   - Репозиторий: ваш форк
-   - Build command: `cd backend && pip install -r requirements.txt`
-   - Start command: `cd backend && uvicorn main:app --host 0.0.0.0 --port 8000`
-   - Окружающие переменные (из Render):
-     - `DATABASE_URL` = connection string вашей БД
-     - `REDIS_URL` = connection string Redis
-     - `JWT_SECRET_KEY` = сгенерируйте длинный ключ
-     - `ADMIN_EMAIL`, `ADMIN_PASSWORD`
-     - `FRONTEND_ORIGINS` = URL фронтенда
+```env
+# База данных
+DATABASE_URL=postgresql://user:pass@host:5432/dbname
 
-5. **Создайте Static Site for Frontend:**
-   - Репозиторий: ваш форк
-   - Build command: `cd frontend && npm install && npm run build && mkdir -p dist && ls`
-   - Publish directory: `frontend/dist`
-   - Окружающие переменные:
-     - `VITE_API_URL` = URL вашего бэкенда (например, `https://your-backend.onrender.com`)
+# Redis
+REDIS_URL=redis://localhost:6379/0
 
-## Скриншоты и отчеты
+# JWT
+JWT_SECRET_KEY=your-super-secret-key-minimum-32-chars
 
-При сдаче проекта добавьте в папку `docs/screenshots/`:
+# Администратор
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=Admin12345
 
-- `grafana-dashboard.png` — дашборд Grafana с RPS, ошибками, задержками
-- `k6-report.png` — скриншот HTML-отчета k6
-- `admin-panel.png` — скриншот админ-панели
-- `login-page.png` — скриншот страницы входа
+# CORS
+FRONTEND_ORIGINS=https://event-discovery-frontend.onrender.com
+
+# Frontend
+VITE_API_URL=https://event-discovery-pim5.onrender.com
+```
+
+## 📊 Мониторинг
+
+### Prometheus метрики
+- `http_requests_total` — количество запросов
+- `http_request_duration_seconds` — время ответа
+- `http_errors_total` — количество ошибок
+
+### Grafana дашборд "Event Discovery API"
+- RPS (requests per second) — ~0.16 req/s
+- Latency p95 — 10ms
+- Latency p50 — 5ms
+- HTTP errors — 0
+
