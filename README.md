@@ -113,9 +113,9 @@ Base URL: `https://event-discovery-pim5.onrender.com`
 
 | Метод | Эндпоинт | Описание | Auth |
 |-------|----------|----------|------|
-| GET | `/conferences` | Список с поиском и фильтрами | — |
+| GET | `/conferences` | Список с поиском и фильтрами | ✅ |
 | POST | `/conferences` | Создать конференцию | ✅ |
-| GET | `/conferences/{id}` | Детали конференции | — |
+| GET | `/conferences/{id}` | Детали конференции | ✅ |
 | PUT | `/conferences/{id}` | Обновить (автор/admin) | ✅ |
 | DELETE | `/conferences/{id}` | Удалить (автор/admin) | ✅ |
 | GET | `/users/me/conferences` | Мои конференции | ✅ |
