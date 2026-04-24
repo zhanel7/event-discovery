@@ -1,72 +1,36 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { UserPlus, Mail, Lock, AlertCircle, CheckCircle } from 'lucide-react'
+import { useLang } from '../context/LanguageContext'
 
 export default function Register() {
   const { user, register } = useAuth()
   const navigate = useNavigate()
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    confirmPassword: '',
-  })
+  const { t, lang } = useLang()
+  const [formData, setFormData] = useState({ email: '', password: '', confirmPassword: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPass, setShowPass] = useState(false)
 
-  if (user) {
-    return <Navigate to="/" replace />
-  }
+  if (user) return <Navigate to="/" replace />
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    })
-  }
+  const validate = (p) => ({
+    length: p.length >= 8,
+    upper: /[A-Z]/.test(p),
+    lower: /[a-z]/.test(p),
+    digit: /\d/.test(p),
+  })
 
-  const validatePassword = (password) => {
-    const errors = []
-
-    if (password.length < 8) {
-      errors.push('At least 8 characters')
-    }
-
-    if (!/[A-Z]/.test(password)) {
-      errors.push('One uppercase letter')
-    }
-
-    if (!/[a-z]/.test(password)) {
-      errors.push('One lowercase letter')
-    }
-
-    if (!/\d/.test(password)) {
-      errors.push('One number')
-    }
-
-    return errors
-  }
+  const checks = validate(formData.password)
+  const allValid = Object.values(checks).every(Boolean)
+  const passMatch = formData.password && formData.confirmPassword && formData.password === formData.confirmPassword
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    if (!passMatch) return setError('Passwords do not match')
+    if (!allValid) return setError('Password requirements not met')
     setLoading(true)
-
-    // Validate passwords match
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match')
-      setLoading(false)
-      return
-    }
-
-    // Validate password requirements
-    const passwordErrors = validatePassword(formData.password)
-    if (passwordErrors.length > 0) {
-      setError(`Password must contain: ${passwordErrors.join(', ')}`)
-      setLoading(false)
-      return
-    }
-
     try {
       await register(formData.email, formData.password)
       navigate('/')
@@ -77,183 +41,219 @@ export default function Register() {
     }
   }
 
-  const passwordErrors = validatePassword(formData.password)
-  const passwordsMatch = formData.password && formData.confirmPassword && formData.password === formData.confirmPassword
+  const inp = {
+    width: '100%', padding: '12px 16px 12px 44px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 12, color: '#f1f5f9', fontSize: 14,
+    outline: 'none', fontFamily: 'Inter, sans-serif', transition: 'all 0.2s',
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary-100">
-            <UserPlus className="h-6 w-6 text-primary-600" />
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Or{' '}
-            <Link
-              to="/login"
-              className="font-medium text-primary-600 hover:text-primary-500"
-            >
-              sign in to existing account
-            </Link>
+    <div style={{
+      minHeight: '100vh', background: '#0f0f1a',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '24px',
+      backgroundImage: `radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(14,165,233,0.1) 0%, transparent 50%)`,
+    }}>
+      <div style={{ width: '100%', maxWidth: 440 }}>
+
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{
+            width: 64, height: 64,
+            background: 'linear-gradient(135deg, #6366f1, #0ea5e9)',
+            borderRadius: 18, display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 16px',
+            fontSize: 28, fontWeight: 800, color: 'white',
+            boxShadow: '0 0 40px rgba(99,102,241,0.4)',
+          }}>E</div>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#f1f5f9', marginBottom: 6 }}>
+            {lang === 'en' ? 'Create Account' : 'Регистрация'}
+          </h1>
+          <p style={{ color: '#64748b', fontSize: 14 }}>
+            {lang === 'en' ? 'Join 10,000+ researchers worldwide' : 'Присоединяйтесь к 10,000+ исследователям'}
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
+        {/* Card */}
+        <div style={{
+          background: '#131b2e',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: 24, padding: 32,
+          boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+        }}>
+          <form onSubmit={handleSubmit}>
+
+            {/* Email */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={{
+                display: 'block', marginBottom: 8,
+                fontSize: 12, fontWeight: 600, color: '#94a3b8',
+                textTransform: 'uppercase', letterSpacing: 0.5,
+              }}>
+                {lang === 'en' ? 'Email Address' : 'Email адрес'}
               </label>
-              <div className="mt-1 relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>✉️</span>
                 <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
+                  type="email" required
                   value={formData.email}
-                  onChange={handleChange}
-                  className="input pl-10"
-                  placeholder="Enter your email"
+                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="your@email.com"
+                  style={inp}
+                  onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.2)' }}
+                  onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none' }}
                 />
               </div>
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
+            {/* Password */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={{
+                display: 'block', marginBottom: 8,
+                fontSize: 12, fontWeight: 600, color: '#94a3b8',
+                textTransform: 'uppercase', letterSpacing: 0.5,
+              }}>
+                {lang === 'en' ? 'Password' : 'Пароль'}
               </label>
-              <div className="mt-1 relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>🔒</span>
                 <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="new-password"
-                  required
+                  type={showPass ? 'text' : 'password'} required
                   value={formData.password}
-                  onChange={handleChange}
-                  className="input pl-10"
-                  placeholder="Create a password"
+                  onChange={e => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Min 8 chars, A-z, 0-9"
+                  style={{ ...inp, paddingRight: 44 }}
+                  onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.2)' }}
+                  onBlur={e => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none' }}
                 />
+                <button type="button" onClick={() => setShowPass(!showPass)} style={{
+                  position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 16,
+                }}>{showPass ? '🙈' : '👁️'}</button>
               </div>
 
-              {/* Password requirements */}
               {formData.password && (
-                <div className="mt-2 space-y-1">
-                  <div className="flex items-center gap-2 text-xs">
-                    {formData.password.length >= 8 ? (
-                      <CheckCircle className="h-3 w-3 text-green-500" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3 text-red-500" />
-                    )}
-                    <span className={formData.password.length >= 8 ? 'text-green-700' : 'text-red-700'}>
-                      At least 8 characters
+                <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                  {[
+                    { label: '8+ chars', ok: checks.length },
+                    { label: 'A-Z', ok: checks.upper },
+                    { label: 'a-z', ok: checks.lower },
+                    { label: '0-9', ok: checks.digit },
+                  ].map(({ label, ok }) => (
+                    <span key={label} style={{
+                      padding: '2px 8px', borderRadius: 100, fontSize: 11, fontWeight: 600,
+                      background: ok ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.1)',
+                      color: ok ? '#34d399' : '#f87171',
+                      border: `1px solid ${ok ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.2)'}`,
+                    }}>
+                      {ok ? '✓' : '✗'} {label}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    {/[A-Z]/.test(formData.password) ? (
-                      <CheckCircle className="h-3 w-3 text-green-500" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3 text-red-500" />
-                    )}
-                    <span className={/[A-Z]/.test(formData.password) ? 'text-green-700' : 'text-red-700'}>
-                      One uppercase letter
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    {/[a-z]/.test(formData.password) ? (
-                      <CheckCircle className="h-3 w-3 text-green-500" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3 text-red-500" />
-                    )}
-                    <span className={/[a-z]/.test(formData.password) ? 'text-green-700' : 'text-red-700'}>
-                      One lowercase letter
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    {/\d/.test(formData.password) ? (
-                      <CheckCircle className="h-3 w-3 text-green-500" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3 text-red-500" />
-                    )}
-                    <span className={/\d/.test(formData.password) ? 'text-green-700' : 'text-red-700'}>
-                      One number
-                    </span>
-                  </div>
+                  ))}
                 </div>
               )}
             </div>
 
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                Confirm Password
+            {/* Confirm password */}
+            <div style={{ marginBottom: 24 }}>
+              <label style={{
+                display: 'block', marginBottom: 8,
+                fontSize: 12, fontWeight: 600, color: '#94a3b8',
+                textTransform: 'uppercase', letterSpacing: 0.5,
+              }}>
+                {lang === 'en' ? 'Confirm Password' : 'Подтвердите пароль'}
               </label>
-              <div className="mt-1 relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>
+                  {passMatch ? '✅' : '🔒'}
+                </span>
                 <input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  autoComplete="new-password"
-                  required
+                  type="password" required
                   value={formData.confirmPassword}
-                  onChange={handleChange}
-                  className="input pl-10"
-                  placeholder="Confirm your password"
+                  onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  placeholder={lang === 'en' ? 'Repeat password' : 'Повторите пароль'}
+                  style={{
+                    ...inp,
+                    borderColor: formData.confirmPassword
+                      ? passMatch ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.5)'
+                      : 'rgba(255,255,255,0.1)',
+                  }}
+                  onFocus={e => e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.2)'}
+                  onBlur={e => e.target.style.boxShadow = 'none'}
                 />
               </div>
-
-              {formData.confirmPassword && (
-                <div className="mt-1 flex items-center gap-2 text-xs">
-                  {passwordsMatch ? (
-                    <>
-                      <CheckCircle className="h-3 w-3 text-green-500" />
-                      <span className="text-green-700">Passwords match</span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="h-3 w-3 text-red-500" />
-                      <span className="text-red-700">Passwords do not match</span>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
-          </div>
 
-          {error && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
-              <AlertCircle className="h-5 w-5 text-red-400" />
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          )}
+            {error && (
+              <div style={{
+                background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
+                borderRadius: 10, padding: '10px 14px',
+                color: '#fca5a5', fontSize: 13, marginBottom: 20,
+              }}>⚠️ {error}</div>
+            )}
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading || !passwordsMatch || passwordErrors.length > 0}
-              className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
+            <button type="submit" disabled={loading || !passMatch || !allValid} style={{
+              width: '100%', padding: '13px',
+              background: (loading || !passMatch || !allValid)
+                ? 'rgba(99,102,241,0.3)'
+                : 'linear-gradient(135deg, #6366f1, #4f46e5)',
+              border: 'none', borderRadius: 12,
+              color: 'white', fontSize: 15, fontWeight: 700,
+              cursor: (loading || !passMatch || !allValid) ? 'not-allowed' : 'pointer',
+              fontFamily: 'Inter, sans-serif',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              boxShadow: '0 4px 20px rgba(99,102,241,0.3)',
+              transition: 'all 0.2s',
+            }}>
               {loading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Creating account...
+                  <div style={{
+                    width: 18, height: 18,
+                    border: '2px solid rgba(255,255,255,0.3)',
+                    borderTopColor: 'white', borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                  }} />
+                  {lang === 'en' ? 'Creating...' : 'Создаём...'}
                 </>
-              ) : (
-                <>
-                  <UserPlus className="h-5 w-5" />
-                  Create account
-                </>
-              )}
+              ) : `🚀 ${lang === 'en' ? 'Create Account' : 'Создать аккаунт'}`}
             </button>
+          </form>
+
+          <div style={{ textAlign: 'center', marginTop: 20, color: '#64748b', fontSize: 14 }}>
+            {lang === 'en' ? 'Already have an account?' : 'Уже есть аккаунт?'}{' '}
+            <Link to="/login" style={{ color: '#a5b4fc', fontWeight: 600, textDecoration: 'none' }}>
+              {lang === 'en' ? 'Sign in →' : 'Войти →'}
+            </Link>
           </div>
-        </form>
+        </div>
+
+        {/* Benefits */}
+        <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {[
+            { icon: '🎓', text: '500+ Conferences' },
+            { icon: '🌍', text: '100+ Countries' },
+            { icon: '🔔', text: 'Deadline alerts' },
+            { icon: '🆓', text: 'Free forever' },
+          ].map(item => (
+            <div key={item.text} style={{
+              padding: '10px 14px',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              borderRadius: 10,
+              display: 'flex', alignItems: 'center', gap: 8,
+              color: '#64748b', fontSize: 12,
+            }}>
+              <span style={{ fontSize: 16 }}>{item.icon}</span>
+              {item.text}
+            </div>
+          ))}
+        </div>
       </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

@@ -9,6 +9,10 @@ import EditConference from './pages/EditConference'
 import Profile from './pages/Profile'
 import AdminPanel from './pages/AdminPanel'
 import ConferenceDetail from './pages/ConferenceDetail'
+import CategoryPage from './pages/CategoryPage'
+import About from './pages/About'
+import FAQ from './pages/FAQ'
+import Contact from './pages/Contact'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -40,6 +44,10 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/conferences/:id" element={<ConferenceDetail />} />
+          <Route path="/category/:category" element={<CategoryPage />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/faq" element={<FAQ />} />
+          <Route path="/contact" element={<Contact />} />
           <Route path="/create" element={<PrivateRoute><CreateConference /></PrivateRoute>} />
           <Route path="/edit/:id" element={<PrivateRoute><EditConference /></PrivateRoute>} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
