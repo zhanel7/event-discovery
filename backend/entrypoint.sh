@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+
 echo "Waiting for database..."
 sleep 3
 echo "Initializing admin user..."

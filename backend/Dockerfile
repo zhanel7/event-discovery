@@ -4,12 +4,13 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + dos2unix для исправления ошибок Windows
 RUN apt-get update && apt-get install -y \
     gcc \
     curl \
     postgresql-client \
     netcat-traditional \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -24,8 +25,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-# Make entrypoint executable
-RUN chmod +x entrypoint.sh
+# Исправляем формат строк (CRLF -> LF) и даем права на выполнение
+RUN dos2unix entrypoint.sh && chmod +x entrypoint.sh
 
 # Switch to non-root user
 USER appuser
