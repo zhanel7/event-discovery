@@ -201,4 +201,5 @@ VITE_API_URL=https://event-discovery-pim5.onrender.com
 |----------|------|-------|
 | Жанель  |  Backend Developer | FastAPI, PostgreSQL, JWT Auth, REST API, Docker, CI/CD, Tests |
 | Диана | Frontend Developer | React, Tailwind CSS, UI/UX Design, Conference Cards, Animations |
-| Алтынай | DevOps / QA Engineer | Docker Compose, Prometheus, Grafana, k6 Load Testing, Deployment |
+| Алтынай | DevOps / QA Engineer | Docker Compose, Prometheus, Grafana, k6 Load Testing, Deployment |#   C I / C D   t r i g g e r  
+ 
